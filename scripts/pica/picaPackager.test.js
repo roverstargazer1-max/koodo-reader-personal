@@ -5,6 +5,7 @@ const path = require("path");
 const os = require("os");
 const yauzl = require("yauzl");
 const {
+  formatEpisodeRange,
   generateComicInfoXml,
   buildCbzArchive,
   runConcurrentPool,
@@ -148,5 +149,46 @@ test("runConcurrentPool gracefully propagates worker errors without unhandled re
       name: "Error",
       message: "Worker network failure",
     }
+  );
+});
+
+test("formatEpisodeRange formats contiguous, discrete, single, and full album subsets accurately", () => {
+  const allEps = [
+    { order: 1, title: "Ch 1" },
+    { order: 2, title: "Ch 2" },
+    { order: 3, title: "Ch 3" },
+    { order: 4, title: "Ch 4" },
+    { order: 5, title: "Ch 5" },
+  ];
+
+  // Full album or more: returns empty string
+  assert.equal(formatEpisodeRange(allEps, allEps), "");
+  assert.equal(formatEpisodeRange([], allEps), "");
+
+  // Single chapter
+  assert.equal(formatEpisodeRange([{ order: 2 }], allEps), "第2话");
+  assert.equal(formatEpisodeRange([2], allEps), "第2话");
+
+  // Contiguous range
+  assert.equal(
+    formatEpisodeRange([{ order: 1 }, { order: 2 }, { order: 3 }], allEps),
+    "第1-3话"
+  );
+  assert.equal(
+    formatEpisodeRange([{ order: 3 }, { order: 4 }], allEps),
+    "第3-4话"
+  );
+
+  // Small non-contiguous range
+  assert.equal(
+    formatEpisodeRange([{ order: 1 }, { order: 3 }, { order: 5 }], allEps),
+    "第1,3,5话"
+  );
+
+  // Larger non-contiguous range
+  const largerAll = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((order) => ({ order }));
+  assert.equal(
+    formatEpisodeRange([1, 3, 5, 7, 9].map((order) => ({ order })), largerAll),
+    "第1话等5话"
   );
 });

@@ -180,6 +180,26 @@ const JmcomicPagination: React.FC<JmcomicPaginationProps> = ({
   );
 };
 
+const formatJmEpisodeRange = (indexes: number[]): string => {
+  if (!indexes || indexes.length === 0) return "";
+  const sorted = [...indexes].sort((a, b) => a - b);
+  if (sorted.length === 1) return `第${sorted[0]}话`;
+  let isContiguous = true;
+  for (let i = 1; i < sorted.length; i++) {
+    if (sorted[i] !== sorted[i - 1] + 1) {
+      isContiguous = false;
+      break;
+    }
+  }
+  if (isContiguous) {
+    return `第${sorted[0]}-${sorted[sorted.length - 1]}话`;
+  }
+  if (sorted.length <= 4) {
+    return `第${sorted.join(",")}话`;
+  }
+  return `第${sorted[0]}话等${sorted.length}话`;
+};
+
 class JmcomicDialog extends React.Component<
   JmcomicDialogProps,
   JmcomicDialogState
@@ -1222,13 +1242,23 @@ class JmcomicDialog extends React.Component<
 
   buildQueryFromTags = (
     baseText: string,
-    filterMap: Record<string, JmTagFilterState>
+    filterMap: Record<string, JmTagFilterState>,
+    removedTag?: string
   ): string => {
     const activeTags = Object.keys(filterMap);
     const tokens = baseText.trim().split(/\s+/).filter(Boolean);
     const nonTagTokens = tokens.filter((tok) => {
-      const clean = tok.replace(/^[+-]/, "");
-      return !activeTags.includes(clean);
+      // Any token starting with + or - is a tag modifier and should not be kept as a plain keyword
+      if (tok.startsWith("+") || tok.startsWith("-")) {
+        return false;
+      }
+      if (activeTags.includes(tok)) {
+        return false;
+      }
+      if (removedTag && tok === removedTag) {
+        return false;
+      }
+      return true;
     });
 
     const tagTokens: string[] = [];
@@ -1258,15 +1288,17 @@ class JmcomicDialog extends React.Component<
       (prev) => {
         const current = prev.tagFilterMap[tag];
         const nextMap = { ...prev.tagFilterMap };
+        let removedTag: string | undefined = undefined;
         if (!current) {
           nextMap[tag] = "include";
         } else if (current === "include") {
           nextMap[tag] = "exclude";
         } else {
           delete nextMap[tag];
+          removedTag = tag;
         }
 
-        const newQuery = this.buildQueryFromTags(prev.searchQuery, nextMap);
+        const newQuery = this.buildQueryFromTags(prev.searchQuery, nextMap, removedTag);
         let newRecent = prev.recentTags;
         if (nextMap[tag] === "include" && !newRecent.includes(tag)) {
           newRecent = [tag, ...newRecent.filter((t) => t !== tag)].slice(0, 30);
@@ -1500,11 +1532,28 @@ class JmcomicDialog extends React.Component<
   ) => {
     if (!albumId || albumId === "undefined") return;
     const { selectedAlbumDetail } = this.state;
-    const title = selectedAlbumDetail
+    let title = selectedAlbumDetail
       ? selectedAlbumDetail.title
       : `JM${albumId}`;
     const author = selectedAlbumDetail ? selectedAlbumDetail.author : "";
     const coverUrl = selectedAlbumDetail ? selectedAlbumDetail.cover : "";
+
+    const allChapters = selectedAlbumDetail?.chapters || [];
+    const isSubsetCombined =
+      combine &&
+      photoIds.length > 0 &&
+      allChapters.length > 0 &&
+      photoIds.length < allChapters.length;
+
+    if (isSubsetCombined) {
+      const selectedIndices = allChapters
+        .filter((c) => photoIds.includes(c.id))
+        .map((c) => c.index);
+      const epLabel = formatJmEpisodeRange(selectedIndices);
+      if (epLabel) {
+        title = `${title} (${epLabel})`;
+      }
+    }
 
     this.setState((prev) => {
       const newTask: JmDownloadTask = {
@@ -2139,27 +2188,68 @@ class JmcomicDialog extends React.Component<
               </div>
 
               <div className="jmcomic-detail-actions">
-                <button
-                  className="jmcomic-btn secondary"
-                  onClick={() =>
-                    this.startDownload(
-                      selectedAlbumDetail.id,
-                      selectedChapterIds,
-                      false
-                    )
-                  }
-                  disabled={selectedChapterIds.length === 0}
-                >
-                  <Trans>Download Selected (Separate CBZ)</Trans>
-                </button>
-                <button
-                  className="jmcomic-btn"
-                  onClick={() =>
-                    this.startDownload(selectedAlbumDetail.id, [], true)
-                  }
-                >
-                  <Trans>Download Full Album (Merged CBZ)</Trans>
-                </button>
+                {(selectedAlbumDetail.chapters?.length || 0) <= 1 ? (
+                  <button
+                    className="jmcomic-btn"
+                    onClick={() =>
+                      this.startDownload(selectedAlbumDetail.id, [], true)
+                    }
+                  >
+                    <Trans>Download Full Album (Merged CBZ)</Trans>
+                  </button>
+                ) : (
+                  <>
+                    <button
+                      className="jmcomic-btn"
+                      onClick={() =>
+                        this.startDownload(
+                          selectedAlbumDetail.id,
+                          selectedChapterIds,
+                          true
+                        )
+                      }
+                      disabled={selectedChapterIds.length === 0}
+                      title={this.props.t(
+                        "Download selected chapters and merge into one single book"
+                      )}
+                    >
+                      <Trans>Download Selected (Merged CBZ)</Trans>{" "}
+                      {selectedChapterIds.length > 0
+                        ? `(${selectedChapterIds.length})`
+                        : ""}
+                    </button>
+                    <button
+                      className="jmcomic-btn secondary"
+                      onClick={() =>
+                        this.startDownload(
+                          selectedAlbumDetail.id,
+                          selectedChapterIds,
+                          false
+                        )
+                      }
+                      disabled={selectedChapterIds.length === 0}
+                      title={this.props.t(
+                        "Download selected chapters as separate comic files"
+                      )}
+                    >
+                      <Trans>Download Selected (Separate CBZ)</Trans>{" "}
+                      {selectedChapterIds.length > 0
+                        ? `(${selectedChapterIds.length})`
+                        : ""}
+                    </button>
+                    <button
+                      className="jmcomic-btn secondary"
+                      onClick={() =>
+                        this.startDownload(selectedAlbumDetail.id, [], true)
+                      }
+                      title={this.props.t(
+                        "Download all chapters and merge into one single book"
+                      )}
+                    >
+                      <Trans>Download Full Album (Merged CBZ)</Trans>
+                    </button>
+                  </>
+                )}
               </div>
             </>
           )}

@@ -251,7 +251,7 @@ function initJmcomicIpc(ipcMain, getMainWindow) {
   // 4. Search
   ipcMain.handle("jmcomic-search", async (event, params = {}) => {
     const args = [];
-    if (params.query) args.push("--query", params.query);
+    if (params.query) args.push(`--query=${params.query}`);
     if (params.page) args.push("--page", String(params.page));
     if (params.order) args.push("--order", params.order);
     if (params.time) args.push("--time", params.time);

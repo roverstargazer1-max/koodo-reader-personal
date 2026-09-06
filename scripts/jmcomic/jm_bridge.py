@@ -144,7 +144,13 @@ def create_custom_option(proxy: Optional[str] = None, domain: Optional[str] = No
         option.download.threading.photo = min(threads, 3)
 
     if output_dir:
-        option.dir_rule.base_dir = output_dir
+        if HAS_JMCOMIC:
+            try:
+                option.dir_rule = jmcomic.DirRule('Bd_Pindex', output_dir)
+            except Exception:
+                option.dir_rule.base_dir = output_dir
+        else:
+            option.dir_rule.base_dir = output_dir
 
     return option
 
@@ -472,18 +478,61 @@ def sanitize_filename(name: str) -> str:
     return name.strip()
 
 
+def format_episode_range(target_eps: list, all_eps: list = None) -> str:
+    """Format human-readable episode range label for subsets."""
+    if not target_eps:
+        return ""
+    if all_eps and len(target_eps) >= len(all_eps):
+        return ""
+    indexes = []
+    for ep in target_eps:
+        try:
+            indexes.append(int(ep[1]))
+        except (ValueError, TypeError, IndexError):
+            pass
+    indexes = sorted(list(set(indexes)))
+    if not indexes:
+        return ""
+    if len(indexes) == 1:
+        return f"第{indexes[0]}话"
+
+    is_contiguous = True
+    for i in range(1, len(indexes)):
+        if indexes[i] != indexes[i - 1] + 1:
+            is_contiguous = False
+            break
+
+    if is_contiguous:
+        return f"第{indexes[0]}-{indexes[-1]}话"
+    if len(indexes) <= 4:
+        return f"第{','.join(str(idx) for idx in indexes)}话"
+    return f"第{indexes[0]}话等{len(indexes)}话"
+
+
 def package_cbz(image_dir: str, cbz_output_path: str):
-    """Package a folder of images into a standard .cbz zip archive."""
+    """Package a folder of images into a standard .cbz zip archive with natural sorting."""
     os.makedirs(os.path.dirname(os.path.abspath(cbz_output_path)), exist_ok=True)
+    all_entries = []
+    for root, dirs, files in os.walk(image_dir):
+        dirs.sort()
+        for file in files:
+            ext = os.path.splitext(file)[1].lower()
+            if ext in ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp']:
+                file_path = os.path.join(root, file)
+                arcname = os.path.relpath(file_path, image_dir).replace('\\', '/')
+                all_entries.append((arcname, file_path))
+
+    # Natural sorting so chapter 1 is followed by chapter 2, not chapter 10
+    import re
+
+    def natural_sort_key(item):
+        return [int(text) if text.isdigit() else text.lower() for text in re.split(r'(\d+)', item[0])]
+
+    all_entries.sort(key=natural_sort_key)
+
     with zipfile.ZipFile(cbz_output_path, 'w', zipfile.ZIP_DEFLATED) as zf:
-        for root, _, files in os.walk(image_dir):
-            files.sort()
-            for file in files:
-                ext = os.path.splitext(file)[1].lower()
-                if ext in ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp']:
-                    file_path = os.path.join(root, file)
-                    arcname = os.path.relpath(file_path, image_dir)
-                    zf.write(file_path, arcname)
+        for arcname, file_path in all_entries:
+            zf.write(file_path, arcname)
 
 
 def cmd_download(args):
@@ -573,14 +622,20 @@ def cmd_download(args):
 
         emit_progress(92.0, "下载完成，正在打包 CBZ...", 0, 0, total_photos, total_photos, "正在打包 CBZ 漫画文件")
 
+        all_album_episodes = getattr(album, 'episode_list', [])
+        is_subset = hasattr(album, 'episode_list') and len(all_album_episodes) > 0 and len(episodes_to_download) < len(all_album_episodes)
+        ep_label = format_episode_range(episodes_to_download, all_album_episodes) if is_subset else ""
+
         if combine or total_photos == 1:
-            cbz_filename = f"[{author}] {title}.cbz"
+            title_with_range = f"{title} ({ep_label})" if ep_label else title
+            display_title = f"{album.title} ({ep_label})" if ep_label else album.title
+            cbz_filename = f"[{author}] {title_with_range}.cbz" if author else f"{title_with_range}.cbz"
             cbz_path = os.path.join(output_dir, cbz_filename)
             package_cbz(temp_download_dir, cbz_path)
             created_files.append({
                 "path": cbz_path,
                 "name": cbz_filename,
-                "title": album.title,
+                "title": display_title,
                 "author": album.author,
                 "cover_url": cover_url,
                 "size": os.path.getsize(cbz_path)
@@ -590,8 +645,13 @@ def cmd_download(args):
                 photo_title_sanitized = sanitize_filename(ptitle)
                 chapter_dir = os.path.join(temp_download_dir, str(pindex))
                 if not os.path.exists(chapter_dir):
-                    chapter_dir = temp_download_dir
-                cbz_filename = f"[{author}] {title} - 第{pindex}话 {photo_title_sanitized}.cbz"
+                    fallback_dir = os.path.join(temp_download_dir, photo_title_sanitized)
+                    chapter_dir = fallback_dir if os.path.exists(fallback_dir) else temp_download_dir
+                cbz_filename = (
+                    f"[{author}] {title} - 第{pindex}话 {photo_title_sanitized}.cbz"
+                    if author
+                    else f"{title} - 第{pindex}话 {photo_title_sanitized}.cbz"
+                )
                 cbz_path = os.path.join(output_dir, cbz_filename)
                 package_cbz(chapter_dir, cbz_path)
                 created_files.append({
@@ -610,11 +670,12 @@ def cmd_download(args):
 
         emit_progress(100.0, "完成打包", 0, 0, total_photos, total_photos, "下载与打包已完成")
 
+        finish_title = (f"{album.title} ({ep_label})" if ep_label else album.title) if (combine or total_photos == 1) else album.title
         emit_json({
             "code": 0,
             "event": "finish",
             "album_id": album_id,
-            "title": album.title,
+            "title": finish_title,
             "author": album.author,
             "cover_url": cover_url,
             "files": created_files
@@ -891,7 +952,19 @@ def main():
     fav_toggle_p.add_argument("--proxy", default=None, help="HTTP/SOCKS5 proxy url")
     fav_toggle_p.add_argument("--domain", default=None, help="JM comic domain")
 
-    args = parser.parse_args()
+    raw_args = sys.argv[1:]
+    normalized_args = []
+    i = 0
+    while i < len(raw_args):
+        arg = raw_args[i]
+        if (arg == "--query" or arg == "-q") and i + 1 < len(raw_args):
+            normalized_args.append(f"{arg}={raw_args[i + 1]}")
+            i += 2
+        else:
+            normalized_args.append(arg)
+            i += 1
+
+    args = parser.parse_args(normalized_args)
 
     if not args.command:
         parser.print_help()

@@ -1378,6 +1378,7 @@
   "Comic Detail": "漫画详情",
   "Loading comic details...": "正在获取漫画详情...",
   "Download Selected (Separate CBZ)": "下载选中章节 (独立 CBZ)",
+  "Download Selected (Merged CBZ)": "下载选中章节 (合并为单本 CBZ)",
   "Download Full Album (Merged CBZ)": "下载全本 (合并为单本 CBZ)",
   "Download Tasks": "下载任务",
   "Clear Finished": "清空已完成",

@@ -51,6 +51,39 @@ function generateComicInfoXml(meta = {}) {
 }
 
 /**
+ * Format human-readable episode range label for subsets
+ */
+function formatEpisodeRange(targetEps = [], allEps = []) {
+  if (!targetEps || targetEps.length === 0) return "";
+  if (allEps && allEps.length > 0 && targetEps.length >= allEps.length) {
+    return "";
+  }
+  const orders = targetEps
+    .map((e) => (typeof e === "number" ? e : (e.order ?? e.index ?? 1)))
+    .filter((v) => typeof v === "number" && !isNaN(v))
+    .sort((a, b) => a - b);
+
+  if (orders.length === 0) return "";
+  if (orders.length === 1) return `第${orders[0]}话`;
+
+  let isContiguous = true;
+  for (let i = 1; i < orders.length; i++) {
+    if (orders[i] !== orders[i - 1] + 1) {
+      isContiguous = false;
+      break;
+    }
+  }
+
+  if (isContiguous) {
+    return `第${orders[0]}-${orders[orders.length - 1]}话`;
+  }
+  if (orders.length <= 4) {
+    return `第${orders.join(",")}话`;
+  }
+  return `第${orders[0]}话等${orders.length}话`;
+}
+
+/**
  * Package images and ComicInfo.xml into a .cbz archive using yazl
  */
 function buildCbzArchive(outputPath, fileEntries, comicInfoXml) {
@@ -331,8 +364,12 @@ async function downloadComicPackage({
         status: "packaging",
       });
 
+      const isSubset = allEps && allEps.length > 0 && targetEps.length < allEps.length;
+      const epSuffix = isSubset ? formatEpisodeRange(targetEps, allEps) : "";
+      const displayTitle = epSuffix ? `${comic.title} (${epSuffix})` : comic.title;
+
       const comicInfoXml = generateComicInfoXml({
-        title: comic.title,
+        title: displayTitle,
         series: comic.title,
         author: comic.author,
         chineseTeam: comic.chineseTeam,
@@ -343,7 +380,8 @@ async function downloadComicPackage({
       });
 
       const authorPrefix = comic.author ? `[${sanitizeName(comic.author)}] ` : "";
-      const cbzFileName = `${authorPrefix}${sanitizeName(comic.title)}.cbz`;
+      const titleWithRange = epSuffix ? `${sanitizeName(comic.title)} (${epSuffix})` : sanitizeName(comic.title);
+      const cbzFileName = `${authorPrefix}${titleWithRange}.cbz`;
       const cbzFilePath = path.join(targetDir, cbzFileName);
 
       if (isCancelled()) throw new Error("Download cancelled by user");
@@ -440,10 +478,19 @@ async function downloadComicPackage({
     } catch {}
   }
 
+  const isSubsetCombined =
+    combineCbz &&
+    allEps &&
+    allEps.length > 0 &&
+    targetEps.length < allEps.length;
+  const finalTitle = isSubsetCombined
+    ? `${comic.title} (${formatEpisodeRange(targetEps, allEps)})`
+    : comic.title;
+
   return {
     code: 0,
     comicId,
-    title: comic.title,
+    title: finalTitle,
     author: comic.author,
     coverUrl: comic.thumbUrl || getImageUrl(comic.thumb),
     files: createdFiles,
@@ -451,6 +498,7 @@ async function downloadComicPackage({
 }
 
 module.exports = {
+  formatEpisodeRange,
   generateComicInfoXml,
   buildCbzArchive,
   downloadImageBuffer,

@@ -178,6 +178,26 @@ const PicaPagination: React.FC<PicaPaginationProps> = ({
   );
 };
 
+const formatEpisodeRangeOrders = (orders: number[]): string => {
+  if (!orders || orders.length === 0) return "";
+  const sorted = [...orders].sort((a, b) => a - b);
+  if (sorted.length === 1) return `第${sorted[0]}话`;
+  let isContiguous = true;
+  for (let i = 1; i < sorted.length; i++) {
+    if (sorted[i] !== sorted[i - 1] + 1) {
+      isContiguous = false;
+      break;
+    }
+  }
+  if (isContiguous) {
+    return `第${sorted[0]}-${sorted[sorted.length - 1]}话`;
+  }
+  if (sorted.length <= 4) {
+    return `第${sorted.join(",")}话`;
+  }
+  return `第${sorted[0]}话等${sorted.length}话`;
+};
+
 class PicaDialog extends React.Component<PicaDialogProps, PicaDialogState> {
   private progressListener: any = null;
   private finishListener: any = null;
@@ -1159,9 +1179,23 @@ class PicaDialog extends React.Component<PicaDialogProps, PicaDialogState> {
     combineCbz: boolean = true
   ) => {
     const comicId = comic.id || (comic as any)._id;
-    const title = comic.title || `Pica-${comicId}`;
+    let title = comic.title || `Pica-${comicId}`;
     const author = comic.author || "";
     const coverUrl = comic.thumbUrl || (comic.thumb ? (comic.thumb as any).fileServer : "");
+
+    const episodesList = (comic as any).episodes || [];
+    const isSubsetCombined =
+      combineCbz &&
+      selectedEpOrders.length > 0 &&
+      episodesList.length > 0 &&
+      selectedEpOrders.length < episodesList.length;
+
+    if (isSubsetCombined) {
+      const epLabel = formatEpisodeRangeOrders(selectedEpOrders);
+      if (epLabel) {
+        title = `${title} (${epLabel})`;
+      }
+    }
 
     this.setState((prev) => {
       const newTask: PicaDownloadTask = {
@@ -2726,28 +2760,57 @@ class PicaDialog extends React.Component<PicaDialogProps, PicaDialogState> {
                       })}
                     </div>
 
-                    <div style={{ display: "flex", gap: 10, marginTop: 18 }}>
-                      <button
-                        className="pica-btn"
-                        style={{ flex: 1 }}
-                        onClick={() => {
-                          this.enqueueDownload(selectedComicDetail, [], true);
-                          this.closeComicDetail();
-                        }}
-                      >
-                        📥 {t("Download Full Album (Merged CBZ)")}
-                      </button>
-                      <button
-                        className="pica-btn secondary"
-                        style={{ flex: 1 }}
-                        disabled={selectedEpOrders.length === 0}
-                        onClick={() => {
-                          this.enqueueDownload(selectedComicDetail, selectedEpOrders, false);
-                          this.closeComicDetail();
-                        }}
-                      >
-                        📥 {t("Download Selected (Separate CBZ)")} ({selectedEpOrders.length})
-                      </button>
+                    <div style={{ display: "flex", gap: 8, marginTop: 18 }}>
+                      {(selectedComicDetail.episodes?.length || 0) <= 1 ? (
+                        <button
+                          className="pica-btn"
+                          style={{ flex: 1 }}
+                          onClick={() => {
+                            this.enqueueDownload(selectedComicDetail, [], true);
+                            this.closeComicDetail();
+                          }}
+                        >
+                          📥 {t("Download Comic (CBZ)")}
+                        </button>
+                      ) : (
+                        <>
+                          <button
+                            className="pica-btn"
+                            style={{ flex: 1, fontSize: 13, padding: "8px 6px", justifyContent: "center" }}
+                            disabled={selectedEpOrders.length === 0}
+                            onClick={() => {
+                              this.enqueueDownload(selectedComicDetail, selectedEpOrders, true);
+                              this.closeComicDetail();
+                            }}
+                            title={t("Download selected chapters and merge into one single book")}
+                          >
+                            📥 {t("Download Selected (Merged CBZ)")} ({selectedEpOrders.length})
+                          </button>
+                          <button
+                            className="pica-btn secondary"
+                            style={{ flex: 1, fontSize: 13, padding: "8px 6px", justifyContent: "center" }}
+                            disabled={selectedEpOrders.length === 0}
+                            onClick={() => {
+                              this.enqueueDownload(selectedComicDetail, selectedEpOrders, false);
+                              this.closeComicDetail();
+                            }}
+                            title={t("Download selected chapters as separate comic files")}
+                          >
+                            📥 {t("Download Selected (Separate CBZ)")} ({selectedEpOrders.length})
+                          </button>
+                          <button
+                            className="pica-btn secondary"
+                            style={{ flex: 1, fontSize: 13, padding: "8px 6px", justifyContent: "center" }}
+                            onClick={() => {
+                              this.enqueueDownload(selectedComicDetail, [], true);
+                              this.closeComicDetail();
+                            }}
+                            title={t("Download all chapters and merge into one single book")}
+                          >
+                            📥 {t("Download Full Album (Merged CBZ)")}
+                          </button>
+                        </>
+                      )}
                     </div>
                   </div>
                 )}

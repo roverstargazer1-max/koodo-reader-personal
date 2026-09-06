@@ -461,6 +461,7 @@
   display: flex;
   justify-content: flex-end;
   gap: 10px;
+  flex-wrap: wrap;
   padding: 12px 16px;
   border-top: 1px solid var(--border-color, rgba(0, 0, 0, 0.08));
 }
