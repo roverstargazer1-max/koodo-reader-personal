@@ -184,6 +184,7 @@ class JmcomicDialog extends React.Component<
   private progressListener: any = null;
   private finishListener: any = null;
   private errorListener: any = null;
+  private searchWrapperRef = React.createRef<HTMLDivElement>();
 
   constructor(props: JmcomicDialogProps) {
     super(props);
@@ -193,6 +194,7 @@ class JmcomicDialog extends React.Component<
     const savedUser = this.loadUser();
     const savedCookies = this.loadCookies();
     const savedRecentTags = this.loadRecentTags();
+    const savedSearchHistory = this.loadSearchHistory();
 
     this.state = {
       currentTab: "search",
@@ -207,6 +209,8 @@ class JmcomicDialog extends React.Component<
       searchTotalPages: 1,
       searchTotalCount: 0,
       searchResults: [],
+      searchHistory: savedSearchHistory,
+      showHistoryDropdown: false,
       isSearching: false,
 
       rankTime: "m",
@@ -269,10 +273,12 @@ class JmcomicDialog extends React.Component<
     this.checkEnvironment();
     this.fetchDomains();
     this.setupDownloadListeners();
+    document.addEventListener("mousedown", this.handleClickOutside);
   }
 
   componentWillUnmount() {
     this.removeDownloadListeners();
+    document.removeEventListener("mousedown", this.handleClickOutside);
   }
 
   loadAuth(): { username: string; password?: string; remember: boolean } | null {
@@ -341,6 +347,38 @@ class JmcomicDialog extends React.Component<
       ConfigService.setObjectConfig("jmcomicRecentTags", tags.slice(0, 30));
     } catch (e) {
       console.error("Failed to persist recent tags:", e);
+    }
+  }
+
+  loadSearchHistory(): string[] {
+    try {
+      const history = ConfigService.getObjectConfig("jmcomicSearchHistory");
+      if (Array.isArray(history)) return history;
+      const raw = localStorage.getItem("jmcomicSearchHistory");
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch (_) {}
+    return [];
+  }
+
+  saveSearchHistory(history: string[]) {
+    try {
+      const clean = history.slice(0, 30);
+      ConfigService.setObjectConfig("jmcomicSearchHistory", clean);
+      localStorage.setItem("jmcomicSearchHistory", JSON.stringify(clean));
+    } catch (e) {
+      console.error("Failed to persist JM search history:", e);
+    }
+  }
+
+  clearSearchHistoryStorage() {
+    try {
+      ConfigService.deleteObjectConfig("jmcomicSearchHistory");
+      localStorage.removeItem("jmcomicSearchHistory");
+    } catch (e) {
+      console.error("Failed to clear JM search history storage:", e);
     }
   }
 
@@ -1242,10 +1280,74 @@ class JmcomicDialog extends React.Component<
     );
   };
 
+  addSearchHistory = (query: string) => {
+    const q = query.trim();
+    if (!q) return;
+    const prev = this.state.searchHistory || [];
+    const next = [q, ...prev.filter((item) => item !== q)].slice(0, 30);
+    this.setState({ searchHistory: next });
+    this.saveSearchHistory(next);
+  };
+
+  handleClickOutside = (e: MouseEvent) => {
+    if (
+      this.state.showHistoryDropdown &&
+      this.searchWrapperRef.current &&
+      !this.searchWrapperRef.current.contains(e.target as Node)
+    ) {
+      this.setState({ showHistoryDropdown: false });
+    }
+  };
+
+  toggleHistoryDropdown = (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    this.setState((prev) => ({ showHistoryDropdown: !prev.showHistoryDropdown }));
+  };
+
+  handleSelectSearchHistory = (item: string) => {
+    const newTagMap = this.parseTagsFromQuery(item);
+    this.setState(
+      {
+        searchQuery: item,
+        tagFilterMap: newTagMap,
+        showHistoryDropdown: false,
+        searchPage: 1,
+      },
+      () => {
+        this.handleSearch(1);
+      }
+    );
+  };
+
+  handleRemoveSearchHistory = (itemToRemove: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const next = (this.state.searchHistory || []).filter((item) => item !== itemToRemove);
+    this.setState({
+      searchHistory: next,
+      showHistoryDropdown: next.length > 0 ? this.state.showHistoryDropdown : false,
+    });
+    if (next.length === 0) {
+      this.clearSearchHistoryStorage();
+    } else {
+      this.saveSearchHistory(next);
+    }
+  };
+
+  handleClearAllSearchHistory = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    this.setState({ searchHistory: [], showHistoryDropdown: false });
+    this.clearSearchHistoryStorage();
+    toast(this.props.t("Search history cleared"));
+  };
+
   handleSearch = async (page = 1) => {
     const { searchQuery, searchOrder, searchCategory, config } = this.state;
     // Allow searching if searchQuery is provided OR if searchCategory is not "0"
     if (!searchQuery.trim() && (!searchCategory || searchCategory === "0")) return;
+
+    if (searchQuery.trim() && page === 1) {
+      this.addSearchHistory(searchQuery.trim());
+    }
 
     this.setState({ isSearching: true, searchPage: page });
     const ipc = getIpc();
@@ -1438,6 +1540,8 @@ class JmcomicDialog extends React.Component<
       searchCategory,
       tagFilterMap,
       recentTags,
+      searchHistory,
+      showHistoryDropdown,
       isSearching,
     } = this.state;
 
@@ -1470,18 +1574,88 @@ class JmcomicDialog extends React.Component<
             ))}
           </select>
 
-          <input
-            type="text"
-            className="jmcomic-search-input"
-            placeholder={this.props.t("Search by keyword, author, or JM ID...")}
-            value={searchQuery}
-            onChange={(e) => {
-              const val = e.target.value;
-              const newTagMap = this.parseTagsFromQuery(val);
-              this.setState({ searchQuery: val, tagFilterMap: newTagMap });
-            }}
-            onKeyDown={(e) => e.key === "Enter" && this.handleSearch(1)}
-          />
+          <div className="jmcomic-search-input-wrapper" ref={this.searchWrapperRef}>
+            <input
+              type="text"
+              className="jmcomic-search-input"
+              placeholder={this.props.t("Search by keyword, author, or JM ID...")}
+              value={searchQuery}
+              onChange={(e) => {
+                const val = e.target.value;
+                const newTagMap = this.parseTagsFromQuery(val);
+                this.setState({ searchQuery: val, tagFilterMap: newTagMap });
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  this.setState({ showHistoryDropdown: false });
+                  this.handleSearch(1);
+                }
+              }}
+            />
+
+            {searchHistory && searchHistory.length > 0 && (
+              <button
+                type="button"
+                className={`jmcomic-history-arrow-btn ${showHistoryDropdown ? "expanded" : ""}`}
+                onClick={this.toggleHistoryDropdown}
+                title={this.props.t("Search History")}
+              >
+                <span className="jmcomic-arrow-icon">
+                  <svg width="10" height="6" viewBox="0 0 10 6" fill="currentColor">
+                    <path
+                      d="M1 1L5 5L9 1"
+                      stroke="currentColor"
+                      strokeWidth="1.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      fill="none"
+                    />
+                  </svg>
+                </span>
+              </button>
+            )}
+
+            {showHistoryDropdown && searchHistory && searchHistory.length > 0 && (
+              <div className="jmcomic-history-dropdown">
+                <div className="jmcomic-history-dropdown-header">
+                  <span className="jmcomic-history-dropdown-title">
+                    <span className="icon-clock" style={{ marginRight: 5 }}></span>
+                    <Trans>Search History</Trans>
+                  </span>
+                  <button
+                    type="button"
+                    className="jmcomic-history-dropdown-clear-all"
+                    onClick={this.handleClearAllSearchHistory}
+                    title={this.props.t("Clear All History")}
+                  >
+                    <span className="icon-trash" style={{ marginRight: 4 }}></span>
+                    <Trans>Clear All</Trans>
+                  </button>
+                </div>
+                <div className="jmcomic-history-dropdown-list">
+                  {searchHistory.map((item) => (
+                    <div
+                      key={item}
+                      className="jmcomic-history-dropdown-item"
+                      onClick={() => this.handleSelectSearchHistory(item)}
+                      title={item}
+                    >
+                      <span className="icon-clock jmcomic-history-item-icon"></span>
+                      <span className="jmcomic-history-dropdown-text">{item}</span>
+                      <button
+                        type="button"
+                        className="jmcomic-history-dropdown-del"
+                        onClick={(e) => this.handleRemoveSearchHistory(item, e)}
+                        title={this.props.t("Delete")}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
 
           <select
             className="jmcomic-select"
@@ -1500,7 +1674,10 @@ class JmcomicDialog extends React.Component<
 
           <button
             className="jmcomic-btn"
-            onClick={() => this.handleSearch(1)}
+            onClick={() => {
+              this.setState({ showHistoryDropdown: false });
+              this.handleSearch(1);
+            }}
             disabled={isSearching}
           >
             {isSearching ? this.props.t("Searching...") : this.props.t("Search")}

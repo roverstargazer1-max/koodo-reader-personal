@@ -128,6 +128,8 @@ export interface PicaDialogState {
   searchTotalPages: number;
   searchTotalCount: number;
   searchResults: PicaComicItem[];
+  searchHistory: string[];
+  showHistoryDropdown: boolean;
   isSearching: boolean;
 
   // Explore & Categories & Rank state

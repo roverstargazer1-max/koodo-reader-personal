@@ -191,6 +191,8 @@ class PicaDialog extends React.Component<PicaDialogProps, PicaDialogState> {
     });
   };
 
+  private searchWrapperRef = React.createRef<HTMLDivElement>();
+
   constructor(props: PicaDialogProps) {
     super(props);
 
@@ -199,6 +201,7 @@ class PicaDialog extends React.Component<PicaDialogProps, PicaDialogState> {
     const savedAuth = this.loadAuth();
     const savedUser = this.loadUser();
     const savedToken = ConfigService.getItem("picaToken") || null;
+    const savedSearchHistory = this.loadSearchHistory();
 
     this.state = {
       currentTab: "search",
@@ -211,6 +214,8 @@ class PicaDialog extends React.Component<PicaDialogProps, PicaDialogState> {
       searchTotalPages: 1,
       searchTotalCount: 0,
       searchResults: [],
+      searchHistory: savedSearchHistory,
+      showHistoryDropdown: false,
       isSearching: false,
 
       exploreSubTab: "categories",
@@ -272,10 +277,12 @@ class PicaDialog extends React.Component<PicaDialogProps, PicaDialogState> {
     if (this.state.token) {
       this.fetchProfile();
     }
+    document.addEventListener("mousedown", this.handleClickOutside);
   }
 
   componentWillUnmount() {
     this.removeDownloadListeners();
+    document.removeEventListener("mousedown", this.handleClickOutside);
   }
 
   loadConfig(): PicaConfig {
@@ -346,6 +353,38 @@ class PicaDialog extends React.Component<PicaDialogProps, PicaDialogState> {
       ConfigService.setObjectConfig("picaDownloadTasks", clean);
     } catch (e) {
       console.error("Failed to persist pica download tasks:", e);
+    }
+  }
+
+  loadSearchHistory(): string[] {
+    try {
+      const history = ConfigService.getObjectConfig("picaSearchHistory");
+      if (Array.isArray(history)) return history;
+      const raw = localStorage.getItem("picaSearchHistory");
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch (_) {}
+    return [];
+  }
+
+  saveSearchHistory(history: string[]) {
+    try {
+      const clean = history.slice(0, 30);
+      ConfigService.setObjectConfig("picaSearchHistory", clean);
+      localStorage.setItem("picaSearchHistory", JSON.stringify(clean));
+    } catch (e) {
+      console.error("Failed to persist Pica search history:", e);
+    }
+  }
+
+  clearSearchHistoryStorage() {
+    try {
+      ConfigService.deleteObjectConfig("picaSearchHistory");
+      localStorage.removeItem("picaSearchHistory");
+    } catch (e) {
+      console.error("Failed to clear Pica search history storage:", e);
     }
   }
 
@@ -713,10 +752,72 @@ class PicaDialog extends React.Component<PicaDialogProps, PicaDialogState> {
     }
   };
 
+  addSearchHistory = (query: string) => {
+    const q = query.trim();
+    if (!q) return;
+    const prev = this.state.searchHistory || [];
+    const next = [q, ...prev.filter((item) => item !== q)].slice(0, 30);
+    this.setState({ searchHistory: next });
+    this.saveSearchHistory(next);
+  };
+
+  handleClickOutside = (e: MouseEvent) => {
+    if (
+      this.state.showHistoryDropdown &&
+      this.searchWrapperRef.current &&
+      !this.searchWrapperRef.current.contains(e.target as Node)
+    ) {
+      this.setState({ showHistoryDropdown: false });
+    }
+  };
+
+  toggleHistoryDropdown = (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    this.setState((prev) => ({ showHistoryDropdown: !prev.showHistoryDropdown }));
+  };
+
+  handleSelectSearchHistory = (item: string) => {
+    this.setState(
+      {
+        searchQuery: item,
+        showHistoryDropdown: false,
+        searchPage: 1,
+      },
+      () => {
+        this.handleSearch(1);
+      }
+    );
+  };
+
+  handleRemoveSearchHistory = (itemToRemove: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const next = (this.state.searchHistory || []).filter((item) => item !== itemToRemove);
+    this.setState({
+      searchHistory: next,
+      showHistoryDropdown: next.length > 0 ? this.state.showHistoryDropdown : false,
+    });
+    if (next.length === 0) {
+      this.clearSearchHistoryStorage();
+    } else {
+      this.saveSearchHistory(next);
+    }
+  };
+
+  handleClearAllSearchHistory = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    this.setState({ searchHistory: [], showHistoryDropdown: false });
+    this.clearSearchHistoryStorage();
+    toast(this.props.t("Search history cleared"));
+  };
+
   // --- Search Handler ---
   handleSearch = async (page = 1) => {
     const { searchQuery, searchSort, searchCategory } = this.state;
     if (!searchQuery.trim() && !searchCategory) return;
+
+    if (searchQuery.trim() && page === 1) {
+      this.addSearchHistory(searchQuery.trim());
+    }
 
     this.setState({ isSearching: true, searchPage: page });
     const ipc = getIpc();
@@ -1560,6 +1661,8 @@ class PicaDialog extends React.Component<PicaDialogProps, PicaDialogState> {
       searchQuery,
       searchSort,
       searchResults,
+      searchHistory,
+      showHistoryDropdown,
       isSearching,
       searchPage,
       searchTotalPages,
@@ -1675,16 +1778,84 @@ class PicaDialog extends React.Component<PicaDialogProps, PicaDialogState> {
           {currentTab === "search" && (
             <div className="pica-search-view">
               <div className="pica-search-bar">
-                <input
-                  type="text"
-                  className="pica-search-input"
-                  placeholder={t("Search PicaComic by keyword, author, or category...")}
-                  value={searchQuery}
-                  onChange={(e) => this.setState({ searchQuery: e.target.value })}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") this.handleSearch(1);
-                  }}
-                />
+                <div className="pica-search-input-wrapper" ref={this.searchWrapperRef}>
+                  <input
+                    type="text"
+                    className="pica-search-input"
+                    placeholder={t("Search PicaComic by keyword, author, or category...")}
+                    value={searchQuery}
+                    onChange={(e) => this.setState({ searchQuery: e.target.value })}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        this.setState({ showHistoryDropdown: false });
+                        this.handleSearch(1);
+                      }
+                    }}
+                  />
+
+                  {searchHistory && searchHistory.length > 0 && (
+                    <button
+                      type="button"
+                      className={`pica-history-arrow-btn ${showHistoryDropdown ? "expanded" : ""}`}
+                      onClick={this.toggleHistoryDropdown}
+                      title={t("Search History")}
+                    >
+                      <span className="pica-arrow-icon">
+                        <svg width="10" height="6" viewBox="0 0 10 6" fill="currentColor">
+                          <path
+                            d="M1 1L5 5L9 1"
+                            stroke="currentColor"
+                            strokeWidth="1.5"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            fill="none"
+                          />
+                        </svg>
+                      </span>
+                    </button>
+                  )}
+
+                  {showHistoryDropdown && searchHistory && searchHistory.length > 0 && (
+                    <div className="pica-history-dropdown">
+                      <div className="pica-history-dropdown-header">
+                        <span className="pica-history-dropdown-title">
+                          <span className="icon-clock" style={{ marginRight: 5 }}></span>
+                          <Trans>Search History</Trans>
+                        </span>
+                        <button
+                          type="button"
+                          className="pica-history-dropdown-clear-all"
+                          onClick={this.handleClearAllSearchHistory}
+                          title={t("Clear All History")}
+                        >
+                          <span className="icon-trash" style={{ marginRight: 4 }}></span>
+                          <Trans>Clear All</Trans>
+                        </button>
+                      </div>
+                      <div className="pica-history-dropdown-list">
+                        {searchHistory.map((item) => (
+                          <div
+                            key={item}
+                            className="pica-history-dropdown-item"
+                            onClick={() => this.handleSelectSearchHistory(item)}
+                            title={item}
+                          >
+                            <span className="icon-clock pica-history-item-icon"></span>
+                            <span className="pica-history-dropdown-text">{item}</span>
+                            <button
+                              type="button"
+                              className="pica-history-dropdown-del"
+                              onClick={(e) => this.handleRemoveSearchHistory(item, e)}
+                              title={t("Delete")}
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
                 <select
                   className="pica-select"
                   value={searchSort}
@@ -1702,7 +1873,10 @@ class PicaDialog extends React.Component<PicaDialogProps, PicaDialogState> {
                 </select>
                 <button
                   className="pica-btn"
-                  onClick={() => this.handleSearch(1)}
+                  onClick={() => {
+                    this.setState({ showHistoryDropdown: false });
+                    this.handleSearch(1);
+                  }}
                   disabled={isSearching}
                 >
                   <span className="icon-search"></span>

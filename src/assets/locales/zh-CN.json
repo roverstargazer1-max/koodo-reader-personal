@@ -1619,5 +1619,8 @@
   "Comics": "漫画",
   "All novels": "全部小说",
   "All comics": "全部漫画",
-  "Other formats": "其它格式"
+  "Other formats": "其它格式",
+  "Search History": "搜索历史",
+  "Clear All History": "清空历史",
+  "Search history cleared": "搜索历史已清空"
 }

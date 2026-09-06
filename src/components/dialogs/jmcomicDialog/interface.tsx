@@ -140,6 +140,8 @@ export interface JmcomicDialogState {
   searchTotalPages: number;
   searchTotalCount: number;
   searchResults: JmAlbumItem[];
+  searchHistory: string[];
+  showHistoryDropdown: boolean;
   isSearching: boolean;
 
   // Rank state

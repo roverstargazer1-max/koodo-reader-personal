@@ -1321,5 +1321,8 @@
   "Enter your Notion personal access token": "請輸入您的 Notion 個人存取權杖",
   "Please set the default sync option to local in the settings, or upgrade to Pro to sync with more cloud storage": "請在設定中將預設同步選項設為本機，或升級至 Pro 以同步更多雲端儲存空間",
   "Please click the Koodo Reader extension icon in the upper right corner of the browser, authorize the request to this endpoint, and try again": "請點擊瀏覽器右上角的 Koodo Reader 擴充功能圖示，授權存取此網域，然後重試",
-  "How to sync library across devices": "如何跨裝置同步書籍庫"
+  "How to sync library across devices": "如何跨裝置同步書籍庫",
+  "Search History": "搜尋歷史",
+  "Clear All History": "清空歷史",
+  "Search history cleared": "搜尋歷史已清空"
 }
