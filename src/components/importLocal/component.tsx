@@ -45,6 +45,7 @@ const supportedFormatsAccept = supportedFormats.reduce<
 }, {});
 declare var window: any;
 let clickFilePath = "";
+const inFlightImportMd5 = new Set<string>();
 
 class ImportLocal extends React.Component<ImportLocalProps, ImportLocalState> {
   resizeHandler: (() => void) | null = null;
@@ -275,6 +276,12 @@ class ImportLocal extends React.Component<ImportLocalProps, ImportLocalState> {
       .toLocaleLowerCase();
     let bookName = file.name.substr(0, file.name.length - extension.length - 1);
     return new Promise<void>(async (resolve) => {
+      // Prevent concurrent duplicate importing of the exact same file/content
+      if (inFlightImportMd5.has(md5)) {
+        toast.error(this.props.t("Duplicate book"));
+        return resolve();
+      }
+
       let isRepeat = false;
       let repeatBook: BookModel | null = await BookUtil.getBookByMd5(md5);
       if (repeatBook) {
@@ -297,6 +304,9 @@ class ImportLocal extends React.Component<ImportLocalProps, ImportLocalState> {
         }
         return resolve();
       }
+
+      inFlightImportMd5.add(md5);
+
       if (!isRepeat) {
         // Electron: read the file content from disk directly to avoid
         // keeping the whole file in memory via FileReader.
@@ -319,6 +329,7 @@ class ImportLocal extends React.Component<ImportLocalProps, ImportLocalState> {
               resolve
             );
           } catch (error) {
+            inFlightImportMd5.delete(md5);
             console.error(error, bookName);
             toast.error(this.props.t("Import failed") + ": " + bookName, {
               duration: 4000,
@@ -330,6 +341,7 @@ class ImportLocal extends React.Component<ImportLocalProps, ImportLocalState> {
         let reader = new FileReader();
         reader.onload = async (event) => {
           if (!event.target) {
+            inFlightImportMd5.delete(md5);
             console.error("e.target error", bookName);
             toast.error(this.props.t("Import failed") + ": " + bookName, {
               duration: 4000,
@@ -349,6 +361,7 @@ class ImportLocal extends React.Component<ImportLocalProps, ImportLocalState> {
           );
         };
         reader.onerror = () => {
+          inFlightImportMd5.delete(md5);
           console.error("reader error", bookName);
           toast.error(this.props.t("Import failed") + ": " + bookName, {
             duration: 4000,
@@ -370,74 +383,80 @@ class ImportLocal extends React.Component<ImportLocalProps, ImportLocalState> {
     filePath: string,
     resolve: (value: void) => void
   ) => {
-    let result: BookModel;
     try {
-      let rendition = BookHelper.getRendition(
-        file_content,
-        {
-          format: extension.toUpperCase(),
-          readerMode: "",
-          charset: "",
-          animation: ConfigService.getReaderConfig("animation") || "none",
-          convertChinese: ConfigService.getReaderConfig("convertChinese"),
-          bookLayout: ConfigService.getReaderConfig("bookLayout"),
-          textRules: getTextRules(),
-          codeHighlight: ConfigService.getReaderConfig("codeHighlight") || "",
-          fullTranslationMode: "no",
-          textOrientation: ConfigService.getReaderConfig("textOrientation"),
-          parserRegex: "",
-          isDarkMode: "no",
-          isMobile: "no",
-          password: "",
-          isScannedPDF: "no",
-          isKeepPDFBackground: "no",
-        },
-        Kookit
-      );
-      result = await BookHelper.generateBook(
-        bookName,
-        extension,
-        md5,
-        fileSize,
-        filePath,
-        file_content,
-        rendition
-      );
+      let result: BookModel;
+      try {
+        let rendition = BookHelper.getRendition(
+          file_content,
+          {
+            format: extension.toUpperCase(),
+            readerMode: "",
+            charset: "",
+            animation: ConfigService.getReaderConfig("animation") || "none",
+            convertChinese: ConfigService.getReaderConfig("convertChinese"),
+            bookLayout: ConfigService.getReaderConfig("bookLayout"),
+            textRules: getTextRules(),
+            codeHighlight: ConfigService.getReaderConfig("codeHighlight") || "",
+            fullTranslationMode: "no",
+            textOrientation: ConfigService.getReaderConfig("textOrientation"),
+            parserRegex: "",
+            isDarkMode: "no",
+            isMobile: "no",
+            password: "",
+            isScannedPDF: "no",
+            isKeepPDFBackground: "no",
+          },
+          Kookit
+        );
+        result = await BookHelper.generateBook(
+          bookName,
+          extension,
+          md5,
+          fileSize,
+          filePath,
+          file_content,
+          rendition
+        );
 
-      if (
-        ConfigService.getReaderConfig("isPrecacheBook") === "yes" &&
-        extension !== "pdf"
-      ) {
-        let cache = await rendition.preCache(file_content);
-        if (cache !== "err" || cache) {
-          await BookUtil.addBook("cache-" + result.key, "zip", cache);
+        if (
+          ConfigService.getReaderConfig("isPrecacheBook") === "yes" &&
+          extension !== "pdf"
+        ) {
+          let cache = await rendition.preCache(file_content);
+          if (cache !== "err" || cache) {
+            await BookUtil.addBook("cache-" + result.key, "zip", cache);
+          }
         }
+      } catch (error) {
+        console.error(error, bookName);
+        toast.error(this.props.t("Import failed") + ": " + bookName, {
+          duration: 4000,
+        });
+        return resolve();
       }
-    } catch (error) {
-      console.error(error, bookName);
-      toast.error(this.props.t("Import failed") + ": " + bookName, {
-        duration: 4000,
-      });
+
+      clickFilePath = "";
+
+      // get metadata failed
+      if (!result || !result.key) {
+        console.error("get metadata failed", bookName);
+        toast.error(this.props.t("Import failed") + ": " + bookName, {
+          duration: 4000,
+        });
+        return resolve();
+      }
+      await this.handleAddBook(
+        result as BookModel,
+        file_content as ArrayBuffer,
+        file.path || filePath
+      );
+
       return resolve();
+    } finally {
+      setTimeout(() => {
+        inFlightImportMd5.delete(md5);
+      }, 5000);
     }
-
-    clickFilePath = "";
-
-    // get metadata failed
-    if (!result || !result.key) {
-      console.error("get metadata failed", bookName);
-      toast.error(this.props.t("Import failed") + ": " + bookName, {
-        duration: 4000,
-      });
-      return resolve();
-    }
-    await this.handleAddBook(
-      result as BookModel,
-      file_content as ArrayBuffer,
-      file.path || filePath
-    );
-
-    return resolve();
   };
 
   decodeHtmlEntities = (value: string) => {

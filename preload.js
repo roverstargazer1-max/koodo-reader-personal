@@ -185,7 +185,16 @@ const removeListener = (channel, listener, handler) => {
   assertChannel(EVENT_CHANNELS, channel);
   const handlers = eventHandlers.get(channel);
   const listeners = handlers && handlers.get(listener);
-  const target = handler || (listeners && listeners[listeners.length - 1]);
+  let target = handler || (listeners && listeners[listeners.length - 1]);
+  if (!target && handlers && handlers.size > 0) {
+    for (const [savedListener, list] of handlers.entries()) {
+      if (list && list.length > 0) {
+        target = list.pop();
+        if (list.length === 0) handlers.delete(savedListener);
+        break;
+      }
+    }
+  }
   if (target) {
     ipcRenderer.removeListener(channel, target);
     if (listeners) {

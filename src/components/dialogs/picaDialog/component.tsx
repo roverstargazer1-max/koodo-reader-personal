@@ -26,6 +26,9 @@ const extractPayload = (arg1: any, arg2: any) => {
   return arg1 || arg2;
 };
 
+const activeImportingPaths = new Set<string>();
+const activeImportingComicIds = new Set<string>();
+
 interface PicaPaginationProps {
   current: number;
   total: number;
@@ -192,6 +195,9 @@ class PicaDialog extends React.Component<PicaDialogProps, PicaDialogState> {
   };
 
   private searchWrapperRef = React.createRef<HTMLDivElement>();
+  private unsubProgress: (() => void) | null = null;
+  private unsubFinish: (() => void) | null = null;
+  private unsubError: (() => void) | null = null;
 
   constructor(props: PicaDialogProps) {
     super(props);
@@ -436,6 +442,10 @@ class PicaDialog extends React.Component<PicaDialogProps, PicaDialogState> {
 
   // --- Auto-import downloaded CBZ file into Koodo Reader ---
   importBookFile = async (filePath: string, fileName: string) => {
+    if (!filePath || activeImportingPaths.has(filePath)) {
+      return false;
+    }
+    activeImportingPaths.add(filePath);
     const ipc = getIpc();
     try {
       if (ipc) {
@@ -462,12 +472,17 @@ class PicaDialog extends React.Component<PicaDialogProps, PicaDialogState> {
       }
     } catch (err) {
       console.error("Import pica CBZ failed:", filePath, err);
+    } finally {
+      setTimeout(() => {
+        activeImportingPaths.delete(filePath);
+      }, 10000);
     }
     return false;
   };
 
   // --- Setup Download Listeners ---
   setupDownloadListeners() {
+    this.removeDownloadListeners();
     const ipc = getIpc();
     if (ipc) {
       this.progressListener = (arg1: any, arg2: any) => {
@@ -509,6 +524,19 @@ class PicaDialog extends React.Component<PicaDialogProps, PicaDialogState> {
         const { comicId, files, title, author, coverUrl } = data;
         const targetId = comicId ? String(comicId) : "";
         if (!targetId || targetId === "undefined") return;
+
+        // Prevent duplicate execution if this task was already completed or already importing
+        const existingTask = this.state.downloadTasks[targetId];
+        if (existingTask && existingTask.status === "completed" && existingTask.imported) {
+          return;
+        }
+        if (activeImportingComicIds.has(targetId)) {
+          return;
+        }
+        activeImportingComicIds.add(targetId);
+        setTimeout(() => {
+          activeImportingComicIds.delete(targetId);
+        }, 15000);
 
         let shouldTriggerNext = false;
 
@@ -651,13 +679,30 @@ class PicaDialog extends React.Component<PicaDialogProps, PicaDialogState> {
         });
       };
 
-      ipc.on("pica-download-progress", this.progressListener);
-      ipc.on("pica-download-finish", this.finishListener);
-      ipc.on("pica-download-error", this.errorListener);
+      const unsubP = ipc.on("pica-download-progress", this.progressListener);
+      if (typeof unsubP === "function") this.unsubProgress = unsubP;
+
+      const unsubF = ipc.on("pica-download-finish", this.finishListener);
+      if (typeof unsubF === "function") this.unsubFinish = unsubF;
+
+      const unsubE = ipc.on("pica-download-error", this.errorListener);
+      if (typeof unsubE === "function") this.unsubError = unsubE;
     }
   }
 
   removeDownloadListeners() {
+    if (this.unsubProgress) {
+      try { this.unsubProgress(); } catch (_) {}
+      this.unsubProgress = null;
+    }
+    if (this.unsubFinish) {
+      try { this.unsubFinish(); } catch (_) {}
+      this.unsubFinish = null;
+    }
+    if (this.unsubError) {
+      try { this.unsubError(); } catch (_) {}
+      this.unsubError = null;
+    }
     const ipc = getIpc();
     if (ipc) {
       if (this.progressListener) ipc.removeListener("pica-download-progress", this.progressListener);

@@ -27,6 +27,9 @@ const extractPayload = (arg1: any, arg2: any) => {
   return arg1 || arg2;
 };
 
+const activeImportingPaths = new Set<string>();
+const activeImportingAlbumIds = new Set<string>();
+
 interface JmcomicPaginationProps {
   current: number;
   total: number;
@@ -184,6 +187,9 @@ class JmcomicDialog extends React.Component<
   private progressListener: any = null;
   private finishListener: any = null;
   private errorListener: any = null;
+  private unsubProgress: (() => void) | null = null;
+  private unsubFinish: (() => void) | null = null;
+  private unsubError: (() => void) | null = null;
   private searchWrapperRef = React.createRef<HTMLDivElement>();
 
   constructor(props: JmcomicDialogProps) {
@@ -402,6 +408,10 @@ class JmcomicDialog extends React.Component<
   }
 
   importBookFile = async (filePath: string, fileName: string) => {
+    if (!filePath || activeImportingPaths.has(filePath)) {
+      return false;
+    }
+    activeImportingPaths.add(filePath);
     const ipc = getIpc();
     try {
       if (ipc) {
@@ -429,11 +439,16 @@ class JmcomicDialog extends React.Component<
       }
     } catch (err) {
       console.error("Import file failed:", filePath, err);
+    } finally {
+      setTimeout(() => {
+        activeImportingPaths.delete(filePath);
+      }, 10000);
     }
     return false;
   };
 
   setupDownloadListeners() {
+    this.removeDownloadListeners();
     const ipc = getIpc();
     if (ipc) {
       this.progressListener = (arg1: any, arg2: any) => {
@@ -476,6 +491,19 @@ class JmcomicDialog extends React.Component<
         const { albumId, files, title, author, cover_url } = data;
         const targetId = albumId ? String(albumId) : "";
         if (!targetId || targetId === "undefined") return;
+
+        // Prevent duplicate execution if this task was already completed or already importing
+        const existingTask = this.state.downloadTasks[targetId];
+        if (existingTask && existingTask.status === "completed" && existingTask.imported) {
+          return;
+        }
+        if (activeImportingAlbumIds.has(targetId)) {
+          return;
+        }
+        activeImportingAlbumIds.add(targetId);
+        setTimeout(() => {
+          activeImportingAlbumIds.delete(targetId);
+        }, 15000);
 
         this.setState((prev) => {
           const task = prev.downloadTasks[targetId] || {
@@ -554,9 +582,14 @@ class JmcomicDialog extends React.Component<
         toast.error(`${this.props.t("Download Failed")}: ${msg || ""}`);
       };
 
-      ipc.on("jmcomic-download-progress", this.progressListener);
-      ipc.on("jmcomic-download-finish", this.finishListener);
-      ipc.on("jmcomic-download-error", this.errorListener);
+      const unsubP = ipc.on("jmcomic-download-progress", this.progressListener);
+      if (typeof unsubP === "function") this.unsubProgress = unsubP;
+
+      const unsubF = ipc.on("jmcomic-download-finish", this.finishListener);
+      if (typeof unsubF === "function") this.unsubFinish = unsubF;
+
+      const unsubE = ipc.on("jmcomic-download-error", this.errorListener);
+      if (typeof unsubE === "function") this.unsubError = unsubE;
     }
   }
 
@@ -913,6 +946,18 @@ class JmcomicDialog extends React.Component<
   };
 
   removeDownloadListeners() {
+    if (this.unsubProgress) {
+      try { this.unsubProgress(); } catch (_) {}
+      this.unsubProgress = null;
+    }
+    if (this.unsubFinish) {
+      try { this.unsubFinish(); } catch (_) {}
+      this.unsubFinish = null;
+    }
+    if (this.unsubError) {
+      try { this.unsubError(); } catch (_) {}
+      this.unsubError = null;
+    }
     const ipc = getIpc();
     if (ipc) {
       if (this.progressListener) {
