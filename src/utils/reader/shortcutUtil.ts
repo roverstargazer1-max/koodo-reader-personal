@@ -31,7 +31,8 @@ export type ShortcutAction =
   | "selectionNote"
   | "selectionHighlight"
   | "selectionSpeak"
-  | "selectionSearch";
+  | "selectionSearch"
+  | "toggleHideCovers";
 
 export type ShortcutConfig = Record<ShortcutAction, ShortcutBinding[]>;
 
@@ -60,6 +61,7 @@ export const SHORTCUT_ACTIONS: ShortcutAction[] = [
   "selectionHighlight",
   "selectionSpeak",
   "selectionSearch",
+  "toggleHideCovers",
 ];
 
 const KEY_LABELS: Record<number, string> = {
@@ -160,7 +162,7 @@ const getKeyLabel = (keyCode: number): string => {
   return `Key${keyCode}`;
 };
 
-const MODIFIER_KEY_CODES = [16, 17, 18, 91, 92, 93, 224];
+export const MODIFIER_KEY_CODES = [16, 17, 18, 91, 92, 93, 224];
 
 export const DEFAULT_SHORTCUT_CONFIG: ShortcutConfig = {
   nextPage: [
@@ -192,6 +194,7 @@ export const DEFAULT_SHORTCUT_CONFIG: ShortcutConfig = {
   selectionHighlight: [{ keyCode: 72, ctrl: true, shift: true }],
   selectionSpeak: [{ keyCode: 82, ctrl: true, shift: true }],
   selectionSearch: [{ keyCode: 70, ctrl: true, shift: true }],
+  toggleHideCovers: [{ keyCode: 18 }],
 };
 
 const cloneBindings = (bindings: ShortcutBinding[]): ShortcutBinding[] =>
@@ -228,9 +231,11 @@ export const matchShortcut = (
   return bindings.some(
     (binding) =>
       event.keyCode === binding.keyCode &&
-      !!event.ctrlKey === !!binding.ctrl &&
-      !!event.altKey === !!binding.alt &&
-      !!event.shiftKey === !!binding.shift
+      // For modifier-key bindings (e.g. Alt itself), the corresponding
+      // modifier flag is inherently set on the event, so treat it as matching.
+      !!event.ctrlKey === !!(binding.ctrl || binding.keyCode === 17) &&
+      !!event.altKey === !!(binding.alt || binding.keyCode === 18) &&
+      !!event.shiftKey === !!(binding.shift || binding.keyCode === 16)
   );
 };
 

@@ -217,13 +217,28 @@ class ContentList extends React.Component<ContentListProps, ContentListState> {
       {}
     );
     this.props.handleJumpPosition(prevPosition);
-    await this.props.htmlBook.rendition.goToChapter(
-      item.index,
-      item.href,
-      item.label
-    );
+    const rendition = this.props.htmlBook.rendition;
+    let targetIndex = item.index;
+    if (typeof rendition.goToChapter === "function") {
+      // EPUB / PDF / 分页漫画等 kookit 渲染器
+      await rendition.goToChapter(item.index, item.href, item.label);
+    } else {
+      // webtoon 条漫滚动模式（WebtoonRender）没有 goToChapter 方法，
+      // 且章节树是原始 toc（条目不带 index），需在扁平章节中按 href 解析
+      const flatChapters = this.props.htmlBook.flattenChapters || [];
+      let flatIndex = _.findIndex(flatChapters, { href: item.href });
+      if (flatIndex < 0) {
+        flatIndex = typeof item.index === "number" ? item.index : 0;
+      }
+      if (typeof rendition.goToChapterIndex === "function") {
+        await rendition.goToChapterIndex(flatIndex);
+      } else if (typeof rendition.goToChapterDocIndex === "function") {
+        await rendition.goToChapterDocIndex(flatIndex);
+      }
+      targetIndex = flatIndex;
+    }
     this.props.handleCurrentChapter(item.label);
-    this.props.handleCurrentChapterIndex(item.index);
+    this.props.handleCurrentChapterIndex(targetIndex);
     scrollContents(item.label, item.href);
   }
   componentDidMount() {

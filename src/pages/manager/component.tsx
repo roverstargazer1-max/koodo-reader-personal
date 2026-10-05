@@ -36,6 +36,15 @@ import toast from "react-hot-toast";
 import { supportedFormats } from "../../utils/common";
 import { processDroppedItems } from "../../utils/file/imageFolderUtil";
 import {
+  applyHideCoversUI,
+  toggleHideCoversAndImages,
+} from "../../utils/reader/mouseEvent";
+import {
+  getShortcutConfig,
+  matchShortcut,
+  MODIFIER_KEY_CODES,
+} from "../../utils/reader/shortcutUtil";
+import {
   isBookDragEvent,
   isExternalFileDragEvent,
 } from "../../utils/reader/bookDrag";
@@ -107,6 +116,12 @@ class Manager extends React.Component<ManagerProps, ManagerState> {
     document.addEventListener("dragend", this.handleDocumentDragEnd, true);
     document.addEventListener("dragenter", this.handleExternalDragEnter, true);
     document.addEventListener("dragover", this.handleDocumentDragOver, true);
+    applyHideCoversUI();
+    // Listen on document (capture) so the shortcut recorder in Settings, which
+    // listens on window capture and stops propagation, suppresses this toggle
+    // while the user is recording a new binding.
+    document.addEventListener("keydown", this.handleHideCoversKeyDown, true);
+    window.addEventListener("focus", this.handleWindowFocusSync);
     // Auto switch to configured startup shelf
     const startupShelf = ConfigService.getReaderConfig("startupShelf");
     if (startupShelf) {
@@ -143,7 +158,35 @@ class Manager extends React.Component<ManagerProps, ManagerState> {
       true
     );
     document.removeEventListener("dragover", this.handleDocumentDragOver, true);
+    document.removeEventListener("keydown", this.handleHideCoversKeyDown, true);
+    window.removeEventListener("focus", this.handleWindowFocusSync);
+    document.body.classList.remove("koodo-hide-covers");
   }
+
+  handleWindowFocusSync = () => {
+    applyHideCoversUI();
+  };
+
+  handleHideCoversKeyDown = (event: KeyboardEvent) => {
+    if (event.repeat) return;
+    if (!matchShortcut(event, getShortcutConfig().toggleHideCovers)) return;
+    // Modifier-only shortcuts (e.g. plain Alt) don't type into inputs, so they
+    // still work while the search box or a dialog field has focus. For
+    // printable bindings, stay out of the way of typing.
+    if (!MODIFIER_KEY_CODES.includes(event.keyCode)) {
+      const target = event.target as HTMLElement;
+      if (
+        target &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+    }
+    event.preventDefault();
+    toggleHideCoversAndImages();
+  };
 
   handleDocumentDragStart = (e: DragEvent) => {
     if (isBookDragEvent(e)) {

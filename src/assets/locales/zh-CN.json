@@ -101,6 +101,8 @@
   "Enter or exit fullscreen mode": "进入或退出全屏阅读",
   "Exit reader": "退出阅读",
   "Close the reader or exit fullscreen": "关闭阅读器或退出全屏",
+  "Hide covers and images": "隐藏封面和图片",
+  "Hide book covers in the library, or images in the book (shown as pure black)": "隐藏书架中的书本封面，或书本内的图片（显示为纯黑色）",
   "Search in book": "书中搜索",
   "Open the in-book search panel": "打开书中搜索面板",
   "Open the navigation panel": "打开导航面板",

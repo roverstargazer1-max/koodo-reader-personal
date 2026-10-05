@@ -37,3 +37,20 @@
 .no-overlay {
   background: transparent !important; /* 使背景透明 */
 }
+
+/* Alt 快捷键：隐藏书本封面（显示为纯黑） */
+.koodo-hide-covers .book-item-image,
+.koodo-hide-covers .empty-cover,
+.koodo-hide-covers .book-cover,
+.koodo-hide-covers .detail-cover,
+.koodo-hide-covers .image-preview .image,
+/* JMComic / Pica 插件弹窗 */
+.koodo-hide-covers .jmcomic-card-cover,
+.koodo-hide-covers .jmcomic-detail-cover,
+.koodo-hide-covers .pica-card-cover,
+.koodo-hide-covers .pica-detail-cover,
+.koodo-hide-covers .pica-category-thumb,
+.koodo-hide-covers .pica-avatar,
+.koodo-hide-covers .pica-download-cover {
+  filter: brightness(0) !important;
+}

@@ -905,6 +905,8 @@
   "Enter or exit fullscreen mode": "Enter or exit fullscreen mode",
   "Exit reader": "Exit reader",
   "Close the reader or exit fullscreen": "Close the reader or exit fullscreen",
+  "Hide covers and images": "Hide covers and images",
+  "Hide book covers in the library, or images in the book (shown as pure black)": "Hide book covers in the library, or images in the book (shown as pure black)",
   "Search in book": "Search in book",
   "Open the in-book search panel": "Open the in-book search panel",
   "Toggle table of contents": "Toggle table of contents",

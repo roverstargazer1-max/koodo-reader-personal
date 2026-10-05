@@ -793,6 +793,21 @@ export class WebtoonRender {
     // Comics do not require text highlighting
   }
 
+  public async chapterText(): Promise<string> {
+    // Comics have no text content
+    return "";
+  }
+
+  public async visibleText(): Promise<string[]> {
+    // Comics have no text content
+    return [];
+  }
+
+  public async audioText(): Promise<string[]> {
+    // Comics have no text content
+    return [];
+  }
+
   public getAnnotationData() {
     return null;
   }
