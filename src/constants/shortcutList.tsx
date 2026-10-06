@@ -51,6 +51,11 @@ export const shortcutList: ShortcutListItem[] = [
     desc: "Close the reader or exit fullscreen",
   },
   {
+    action: "toggleHideCovers",
+    title: "Hide covers and images",
+    desc: "Hide book covers in the library, or images in the book (shown as pure black)",
+  },
+  {
     action: "searchInBook",
     title: "Search in book",
     desc: "Open the in-book search panel",

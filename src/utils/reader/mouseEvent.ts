@@ -224,6 +224,51 @@ const mouseChrome = async (rendition: any, deltaY: number) => {
   }
 };
 
+const HIDE_COVERS_CONFIG_KEY = "isHideCoversAndImages";
+const HIDE_IMAGES_STYLE_ID = "koodo-hide-images-style";
+
+export const isHideCoversAndImages = () =>
+  ConfigService.getReaderConfig(HIDE_COVERS_CONFIG_KEY) === "yes";
+
+export const applyHideCoversUI = () => {
+  document.body.classList.toggle(
+    "koodo-hide-covers",
+    isHideCoversAndImages()
+  );
+};
+
+const applyHideImagesToDoc = (doc: Document | null) => {
+  if (!doc) return;
+  const existing = doc.getElementById(HIDE_IMAGES_STYLE_ID);
+  if (isHideCoversAndImages()) {
+    if (!existing) {
+      const style = doc.createElement("style");
+      style.id = HIDE_IMAGES_STYLE_ID;
+      style.textContent =
+        "img, image, canvas, video { filter: brightness(0) !important; }";
+      (doc.head || doc.documentElement).appendChild(style);
+    }
+  } else if (existing) {
+    existing.remove();
+  }
+};
+
+export const applyHideImages = (format: string, bookKey?: string) => {
+  applyHideCoversUI();
+  getIframeDoc(format, bookKey).forEach((doc) => applyHideImagesToDoc(doc));
+};
+
+export const toggleHideCoversAndImages = (
+  format: string = "",
+  bookKey?: string
+) => {
+  ConfigService.setReaderConfig(
+    HIDE_COVERS_CONFIG_KEY,
+    isHideCoversAndImages() ? "no" : "yes"
+  );
+  applyHideImages(format, bookKey);
+};
+
 const handleShortcut = (
   event: any,
   format: string,
@@ -231,6 +276,13 @@ const handleShortcut = (
   rendition?: any
 ) => {
   const shortcuts = getShortcutConfig();
+  if (matchShortcut(event, shortcuts.toggleHideCovers)) {
+    event.preventDefault();
+    if (!event.repeat) {
+      toggleHideCoversAndImages(format, bookKey);
+    }
+    return;
+  }
   if (matchShortcut(event, shortcuts.bossKey)) {
     if (isElectron) {
       event.preventDefault();
@@ -484,6 +536,7 @@ export const htmlMouseEvent = (
         renderBookFunc
       );
     }
+    applyHideImages(format, key);
     lock = false;
   });
 };

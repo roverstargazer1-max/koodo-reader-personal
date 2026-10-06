@@ -62,17 +62,6 @@ class ModeControl extends React.Component<ModeControlProps, ModeControlState> {
 
           <div
             className="double-mode-container"
-            title={this.props.t("Scroll mode")}
-            onClick={() => {
-              this.handleChangeMode("scroll");
-            }}
-            style={this.props.readerMode === "scroll" ? {} : { opacity: 0.4 }}
-          >
-            <span className="icon-scroll two-page-icon"></span>
-          </div>
-
-          <div
-            className="double-mode-container"
             title={this.props.t("Webtoon mode")}
             onClick={() => {
               this.handleChangeMode("webtoon");

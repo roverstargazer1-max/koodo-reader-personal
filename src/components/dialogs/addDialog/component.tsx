@@ -75,8 +75,10 @@ class AddDialog extends Component<AddDialogProps, AddDialogState> {
     this.props.handleAddDialog(false);
     toast.success(this.props.t("Addition successful"));
     this.props.handleActionDialog(false);
-    this.props.handleMode("shelf");
-    this.props.handleShelf(shelfTitle);
+    if (this.props.mode === "shelf") {
+      this.props.handleMode("shelf");
+      this.props.handleShelf(shelfTitle);
+    }
   };
   handleChange = (shelfTitle: string) => {
     if (shelfTitle === "New shelf") {

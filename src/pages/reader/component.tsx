@@ -27,6 +27,12 @@ import {
 } from "../../utils/reader/discordRPC";
 import SupportDialog from "../../components/dialogs/supportDialog";
 import { READING_PANEL_TOGGLE_EVENT } from "../../utils/reader/mouseEvent";
+import { toggleHideCoversAndImages } from "../../utils/reader/mouseEvent";
+import {
+  getShortcutConfig,
+  matchShortcut,
+  MODIFIER_KEY_CODES,
+} from "../../utils/reader/shortcutUtil";
 import { throttle } from "../../utils/common";
 declare var window: any;
 let lock = false; //prevent from clicking too fasts
@@ -153,6 +159,11 @@ class Reader extends React.Component<ReaderProps, ReaderState> {
       READING_PANEL_TOGGLE_EVENT,
       this.handleReadingPanelToggle
     );
+    // Capture-phase listener so the hide-toggle shortcut runs before any
+    // other handler and suppresses Alt's default behavior (menu activation).
+    // Bound on document so the shortcut recorder in Settings (window capture +
+    // stopPropagation) suppresses this toggle while recording a new binding.
+    document.addEventListener("keydown", this.handleHideCoversKeyDown, true);
 
     if (isElectron && window.electronAPI?.on) {
       this.mobileProgressHandler = (arg1: any, arg2: any) => {
@@ -310,6 +321,7 @@ class Reader extends React.Component<ReaderProps, ReaderState> {
       READING_PANEL_TOGGLE_EVENT,
       this.handleReadingPanelToggle
     );
+    document.removeEventListener("keydown", this.handleHideCoversKeyDown, true);
     if (isElectron) {
       clearDiscordPresence();
     }
@@ -471,6 +483,33 @@ class Reader extends React.Component<ReaderProps, ReaderState> {
       this.props.currentBook.key,
       position,
       "recordLocation"
+    );
+  };
+  handleHideCoversKeyDown = (event: KeyboardEvent) => {
+    if (event.repeat) return;
+    if (!matchShortcut(event, getShortcutConfig().toggleHideCovers)) return;
+    // Modifier-only shortcuts (e.g. plain Alt) don't type into inputs, so they
+    // still work while an input has focus. For printable bindings, stay out of
+    // the way of typing.
+    if (!MODIFIER_KEY_CODES.includes(event.keyCode)) {
+      const target = event.target as HTMLElement;
+      if (
+        target &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+    }
+    event.preventDefault();
+    // Stop the throttled handlers in mouseEvent.ts from toggling a second time
+    // for the same keypress when focus is on the reader chrome.
+    event.stopImmediatePropagation();
+    if (!this.props.currentBook || !this.props.currentBook.format) return;
+    toggleHideCoversAndImages(
+      this.props.currentBook.format,
+      this.props.currentBook.key
     );
   };
   render() {
