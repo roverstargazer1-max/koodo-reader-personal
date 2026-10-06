@@ -92,10 +92,27 @@ jobs:
             "$hash  $($_.Name)"
           } | Set-Content dist/SHA256SUMS.txt -Encoding ascii
 
+      - name: Derive artifact-safe ref name
+        id: safe_ref
+        shell: pwsh
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          HEAD_REF: ${{ github.head_ref }}
+          REF_NAME: ${{ github.ref_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          if ($env:EVENT_NAME -eq "pull_request") {
+            $name = "pr$($env:PR_NUMBER)-$($env:HEAD_REF)"
+          } else {
+            $name = $env:REF_NAME
+          }
+          $safe = $name -replace '[^A-Za-z0-9._-]', '-'
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "safe_ref_name=$safe"
+
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: Koodo-Reader-Personal-${{ github.ref_name }}-windows-x64
+          name: Koodo-Reader-Personal-${{ steps.safe_ref.outputs.safe_ref_name }}-windows-x64
           path: |
             dist/*.exe
             dist/SHA256SUMS.txt
